@@ -1,0 +1,99 @@
+//creation d'un index sur la collection subways
+db.subways.createIndex({"geometry":"2dsphere"});
+
+//creation d'un index sur la collection parks
+db.parks.createIndex({"location":"2dsphere"});
+
+//creation d'un index sur la collection censusBlocks
+db.censusBlocks.createIndex({"location":"2dsphere"});
+
+//creation d'un index sur la collection censusTracts
+db.censusTracts.createIndex({"location":"2dsphere"});
+
+//creation d'un index sur la collection theaters
+db.theaters.createIndex({"geometry":"2dsphere"});
+
+
+
+//parmis tous les blocs, on recherche ceux qui contiennent au moins une station de métro, et on enregistre le nom et les lignes qui y circulent
+db.censusTracts.find().forEach(function(x){
+    var cb = x.geometry ;
+    db.subways.find(
+        {
+            "geometry": {
+                $geoWithin :
+                {
+                    $geometry: cb
+                }
+            }
+        }
+).forEach(function(y){
+        db.tractsWithSubways.insert(x);
+ 	db.tractsWithSubways.update(
+            { "id" : x.id },
+            { $set: { "nameSubway" : y.name, "linesSubway":y.lines } }
+        );
+    })
+})
+
+db.getCollection('tractsWithSubways').count()// 382
+
+
+//pour tous ces blocs selectionnés, on regarde lesquels intersectent un parc, en enregistrant le nom et la superficie
+db.tractsWithSubways.find().forEach(function(x){
+    var cb = x.geometry ;
+    db.parks.find(
+        {
+            "geometry": {
+                $geoIntersects :
+                {
+                    $geometry: cb
+                }
+            }
+        }
+).forEach(function(y){
+        db.tractsWithSubwaysAndParks.insert(x);
+        db.tractsWithSubwaysAndParks.update(
+            { "id" : x.id },
+            { $set: { "namePark" : y.name, "acresPark":y.acres } }
+        );
+    })
+})
+
+db.getCollection('tractsWithSubwaysAndParks').count()
+
+
+
+//parmis les parks et les métros proches, on recherche les théâtres à moins de 250 mètres en conservant leur nom et leur adresse
+db.tractsWithSubwaysAndParks.find().forEach(function(x){
+    db.theaters.find(
+        {
+            "geometry": {
+                $nearSphere :
+          {
+            $geometry: { "type" : "Point" , "coordinates" :  x.geometry.coordinates[0][0][0]},
+            $minDistance: 0,
+            $maxDistance: 250
+          }
+            }
+        }
+).forEach(function(y){
+        db.tractsWithSubwaysAndParksNearTheaters.insert(x);
+        db.tractsWithSubwaysAndParksNearTheaters.update(
+            { "id" : x.id },
+            { $set: { "nameTheater" : y.name, "adressTheater":y.address, "geoTheater" : y.geometry } } 
+        );
+    })
+})
+
+db.tractsWithSubwaysAndParksNearTheaters.count(); //5.
+
+
+
+
+ //on trie la collection pour trouver le parc le plus grand
+db.getCollection('tractsWithSubwaysAndParksNearTheaters').find().sort({acresPark:-1}).limit(1).forEach(function(x){
+	print ("le bloc idéal est " + x.name + " proche du parc " + x.namePark + " de superficie de " + x.acresPark + " à proximité de la station de métro " + x.nameSubway + " où les lignes " + x.linesSubway + " circulent, à proximité du théâtre " + x.nameTheater + " à l'adresse " + x.adressTheater );
+});
+
+
